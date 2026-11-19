@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tableau filtrable - Widget Grist</title>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@gouvfr/dsfr@1.13.1/dist/dsfr.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@gouvfr/dsfr@1.13.1/dist/utility/icons/icons.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css">
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; font-family: "Marianne", arial, sans-serif; background: #fff; color: #161616; }
+  .wrap { padding: 16px 20px 12px; }
+
+  .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .top h1 { font-size: 1.25rem; margin: 0 0 4px; line-height: 1.3; }
+  .summary { font-size: .9rem; color: #3A3A3A; margin: 0 0 16px; }
+  .icon-btn { background: #fff !important; border: 1px solid #DDD !important; border-radius: 4px; width: 36px; height: 36px; cursor: pointer; color: #000091 !important; font-size: 1rem; flex-shrink: 0; display: flex; align-items: center; justify-content: center; padding: 0 !important; }
+  .icon-btn:hover { background: #F6F6F6 !important; }
+
+  .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 16px; }
+  .f { display: flex; flex-direction: column; gap: 4px; flex: 1 1 180px; max-width: 320px; }
+  .f label { font-size: .75rem; color: #3A3A3A; display: flex; align-items: center; gap: 4px; }
+  .f select, .f input { border: 1px solid #CCC; border-radius: 4px; padding: 8px 10px; font-size: .85rem; font-family: inherit; background: #fff; color: #161616; width: 100%; }
+  .f select:disabled { background: #F6F6F6; color: #3A3A3A; cursor: not-allowed; }
+  .f .lock { color: #000091; }
+  .segmented { display: flex; border: 1px solid #CCC; border-radius: 4px; overflow: hidden; }
+  .seg-btn { border: none !important; border-right: 1px solid #CCC !important; background: #fff !important; padding: 8px 12px !important; font-size: .85rem; font-family: inherit; cursor: pointer; color: #161616 !important; flex: 1; }
+  .seg-btn:last-child { border-right: none !important; }
+  .seg-btn.active { background: #000091 !important; color: #fff !important; }
+  .reset { background: none !important; border: none !important; color: #000091 !important; text-decoration: underline; font-size: .85rem; cursor: pointer; padding: 8px 4px !important; }
+
+  /* Conteneur à hauteur d'écran : défilement interne, en-têtes figés */
+  .tbl-scroll { overflow: auto; border: 1px solid #E5E5E5; width: fit-content; max-width: 100%; }
+  table.t { border-collapse: separate; border-spacing: 0; width: auto; font-size: .82rem; }
+  .t th, .t td { border-right: 1px solid #E5E5E5; border-bottom: 1px solid #E5E5E5; padding: 10px 12px; text-align: left; white-space: nowrap; }
+  .t tr > :last-child { border-right: none; }
+  .t thead th { background: #F6F6F6; font-weight: 700; cursor: pointer; user-select: none; position: sticky; top: 0; z-index: 2; box-shadow: 0 1px 0 #DDD; }
+  .t .clip { display: inline-block; max-width: 28rem; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+  .totop { position: sticky; left: 0; display: flex; justify-content: flex-end; padding: 10px 12px; background: #fff; }
+  .t thead th:hover { background: #EEE; }
+  .t thead th i { color: #000091; font-size: 13px; margin-left: 4px; }
+  .t tbody tr:hover td { background: #FAFAFA; }
+  .t td.num, .t th.num { text-align: right; }
+  .t td.ctr, .t th.ctr { text-align: center; }
+  .t td.hl { background: #F6F6F6; font-weight: 700; }
+  .t tbody tr:hover td.hl { background: #EEEEEE; }
+  .t tfoot td { color: #000091; font-weight: 700; border-top: 2px solid #000091; background: #F5F5FE; }
+  .t tfoot td.hl { background: #E3E3FD; }
+  .badge { font-size: .72rem; padding: 2px 9px; border-radius: 999px; display: inline-block; }
+  .b-ok { background: #B8FEC9; color: #18753C; }
+  .b-no { background: #EEE; color: #3A3A3A; }
+  .b-state { background: #E3E3FD; color: #000091; }
+  .b-sub { background: #FEECC2; color: #716043; display: block; width: fit-content; margin-top: 4px; font-size: .68rem; }
+  /* Couleurs des pastilles = badges système DSFR */
+  .bc-green { background: #B8FEC9; color: #18753C; }
+  .bc-yellow { background: #FEECC2; color: #716043; }
+  .bc-red { background: #FFE9E9; color: #CE0500; }
+  .bc-grey { background: #EEEEEE; color: #3A3A3A; }
+  .colors-row td { background: #F9F9FF; padding: 8px 10px !important; }
+  .col-map { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+  .col-map label { display: flex; align-items: center; gap: 6px; font-size: .75rem; }
+  .col-map select { max-width: 120px; }
+  .sw { position: relative; display: inline-block; width: 40px; height: 22px; cursor: pointer; vertical-align: middle; }
+  .sw input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .sw span { position: absolute; inset: 0; background: #CECECE; border-radius: 999px; transition: background .15s; }
+  .sw span::before { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform .15s; }
+  .sw input:checked + span { background: #000091; }
+  .sw input:checked + span::before { transform: translateX(18px); }
+  .sw input:focus-visible + span { outline: 2px solid #0A76F6; outline-offset: 2px; }
+  .sw input:disabled + span { opacity: .5; cursor: wait; }
+  .lnk { color: inherit !important; text-decoration: none !important; background-image: none !important; }
+  .lnk::after { display: none !important; content: none !important; }
+  .lnk.url { color: #000091 !important; }
+  .lnk.url i { font-size: .8em; }
+  .lnk:hover { color: #000091 !important; text-decoration: underline !important; }
+  .toast { position: fixed; bottom: 16px; right: 16px; background: #18753C; color: #fff; padding: 10px 16px; font-size: .85rem; border-radius: 4px; z-index: 10; }
+  .toast.err-t { background: #CE0500; }
+  .empty { padding: 24px 4px; color: #3A3A3A; font-size: .9rem; }
+
+  .cfg { background: #F6F6F6; border: 1px solid #E5E5E5; padding: 14px 16px; margin-bottom: 16px; }
+  .cfg h2 { font-size: .95rem; margin: 0 0 4px; }
+  .cfg h3 { font-size: .85rem; margin: 18px 0 8px; color: #000091; }
+  .cfg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px 16px; }
+  .cfg-row { display: flex; flex-direction: column; gap: 3px; font-size: .75rem; color: #3A3A3A; }
+  .cfg-row small { font-size: .7rem; color: #666; }
+  .cfg input:not([type=checkbox]), .cfg select { border: 1px solid #CCC; border-radius: 4px; padding: 5px 8px; font-size: .8rem; font-family: inherit; background: #fff; color: #161616; }
+  .cfg-tbl { overflow-x: auto; background: #fff; border: 1px solid #E5E5E5; }
+  .cfg-tbl table { border-collapse: collapse; font-size: .8rem; width: 100%; }
+  .cfg-tbl th, .cfg-tbl td { padding: 4px 6px; border-bottom: 1px solid #EEE; text-align: left; white-space: nowrap; }
+  .cfg-tbl th { background: #F6F6F6; font-weight: 600; font-size: .72rem; }
+  .cfg-tbl td.c { text-align: center; }
+  .cfg-tbl td.drag { cursor: grab; color: #666; width: 28px; text-align: center; font-size: 1.1rem; }
+  .cfg-tbl tr.dragging { opacity: .4; }
+  .cfg-tbl tr.drop-before td { box-shadow: inset 0 3px 0 #000091; }
+  .cfg-tbl tr.drop-after td { box-shadow: inset 0 -3px 0 #000091; }
+  .cfg details summary { cursor: pointer; font-size: .8rem; color: #000091; margin: 12px 0 6px; }
+  .cfg-tbl code { font-size: .7rem; color: #666; }
+  .cfg-tbl select { max-width: 200px; text-overflow: ellipsis; }
+  .cfg-tbl input[data-fk=label] { width: 14rem; }
+  .cfg input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; accent-color: #000091; }
+  .mv { display: flex; gap: 2px; }
+  .mini { background: #fff !important; border: 1px solid #DDD !important; border-radius: 3px; width: 26px; height: 26px; padding: 0 !important; cursor: pointer; color: #000091 !important; display: inline-flex; align-items: center; justify-content: center; }
+  .mini:disabled { opacity: .3; cursor: default; }
+  .cfg-actions { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn-p { background: #000091 !important; color: #fff !important; border: none !important; padding: 8px 14px !important; font-size: .85rem; cursor: pointer; font-family: inherit; }
+  .btn-s { background: #fff !important; color: #000091 !important; border: 1px solid #000091 !important; padding: 6px 12px !important; font-size: .82rem; cursor: pointer; font-family: inherit; margin-top: 8px; }
+  .cfg-actions .btn-s { margin-top: 0; padding: 8px 14px !important; }
+
+  @media (max-width: 600px) { .wrap { padding: 12px; } .f { max-width: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1 id="title">Chargement…</h1>
+      <p class="summary" id="summary"></p>
+    </div>
+    <button id="cfgBtn" class="icon-btn" title="Réglages du widget" hidden><i class="ri-settings-3-line"></i></button>
+  </div>
+  <div id="cfg" class="cfg" hidden></div>
+  <div id="filters" class="filters"></div>
+  <div id="area"></div>
+  <div id="toast" class="toast" role="status" hidden></div>
+</div>
+
+<script>
+// ===== RÉFÉRENTIELS =====
+const TYPES = { text: "Texte", date: "Date", number: "Nombre", money: "Montant (€)", bool: "Oui / Non", badge: "Pastille", url: "Lien (URL)" };
+const COLORS = { "": "Défaut", green: "Vert", yellow: "Jaune", red: "Rouge", grey: "Gris" };
+const KINDS = { select: "Liste déroulante", search: "Recherche texte", bool: "Oui / Non" };
+
+// ===== ÉTAT =====
+let COLMETA = [];   // toutes les colonnes de la table (métadonnées Grist)
+let META = [];      // colonnes réellement envoyées par Grist au widget : { id, label, type }
+let SIG = "";       // signature de la liste des colonnes reçues
+let TABLE_ID = "";
+let ALL = [];       // lignes reçues (déjà filtrées par les filtres de la vue Grist)
+let saved = null;   // réglages enregistrés dans l'option "config" du widget
+let cfg = null;     // réglages effectifs
+let locked = false;
+let sort = { col: null, dir: 1 };
+let fstate = {};    // valeur de chaque filtre, par index
+
+grist.ready({ requiredAccess: "full" });
+const VERSION = "2026-11-19-a";
+console.info("Widget tableau générique — version", VERSION);
+const metaReady = loadMeta();
+// Comme le widget d'origine : vue cloisonnée (une seule valeur visible, via les règles d'accès Grist)
+// = utilisateur restreint → lecture seule ; sinon roue dentée et interrupteurs actifs
+function editable() { return !locked; }
+
+// ===== UTILITAIRES =====
+function norm(s) {
+  return String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[\s-]+/g, "_").trim();
+}
+function txt(v) {
+  if (v === null || v === undefined) return "";
+  if (Array.isArray(v)) return v[0] === "L" ? v.slice(1).join(", ") : v.join(", ");
+  if (v instanceof Date) return fmtDate(v);
+  if (typeof v === "object") return v.display ?? v.name ?? JSON.stringify(v);
+  return String(v);
+}
+function toDate(v) {
+  if (!v) return null;
+  if (v instanceof Date) return v;
+  if (typeof v === "number") return new Date(v * 1000);
+  const d = new Date(v);
+  return isNaN(d) ? null : d;
+}
+function fmtDate(v) {
+  const d = toDate(v);
+  if (!d) return "";
+  const p = n => String(n).padStart(2, "0");
+  return `${p(d.getUTCDate())}-${p(d.getUTCMonth() + 1)}-${d.getUTCFullYear()}`;
+}
+function fmtMoney(n) { return (Number(n) || 0).toLocaleString("fr-FR") + " €"; }
+function fmtNum(n) { return (Number(n) || 0).toLocaleString("fr-FR"); }
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function colById(id) { return id ? cfg.columns.find(c => c.id === id) : null; }
+function clip(t) { return t.length > 60 ? `<span class="clip" title="${esc(t)}">${esc(t)}</span>` : esc(t); }
+// Hauteur du tableau = espace restant dans la fenêtre (en-têtes figés pendant le défilement)
+function fitTable() {
+  const el = document.querySelector(".tbl-scroll");
+  if (!el) return;
+  const top = el.getBoundingClientRect().top + window.scrollY;
+  el.style.maxHeight = Math.max(300, window.innerHeight - top - 12) + "px";
+}
+window.addEventListener("resize", fitTable);
+// Classe de couleur d'une pastille : couleur de la valeur, sinon couleur par défaut de la colonne
+function bc(c, val) {
+  if (!c) return "";
+  const k = (c.colors && c.colors[val]) || c.color || "";
+  return k ? "bc-" + k : "";
+}
+// Lien cliquable depuis la valeur de la cellule.
+// Gère le format « Lien » de Grist (« libellé https://… ») ; seuls http(s), mailto et tel sont acceptés.
+function linkCell(t) {
+  t = t.trim();
+  if (!t) return "";
+  let label = t, href = t;
+  const m = t.match(/^(.*\S)\s+(\S+)$/);
+  if (m && /^(https?:\/\/|mailto:|tel:|www\.)/i.test(m[2])) { label = m[1]; href = m[2]; }
+  if (/^[^\s@:\/]+@[^\s@]+\.\w+$/.test(href)) href = "mailto:" + href; // adresse e-mail
+  else if (/^www\./i.test(href)) href = "https://" + href;
+  else if (!/^(https?:\/\/|mailto:|tel:)/i.test(href)) {
+    if (/^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(href)) href = "https://" + href; // domaine sans protocole
+    else return esc(t); // pas une adresse : affichée telle quelle
+  }
+  if (label === t) label = t.replace(/^(https?:\/\/(www\.)?|mailto:|tel:)/i, "").replace(/\/$/, ""); // URL seule : affichage raccourci
+  return `<a class="lnk url" href="${esc(href)}" target="_blank" rel="noopener" title="${esc(href)}">${clip(label)} <i class="ri-external-link-line"></i></a>`;
+}
+function sumOf(rows, id) { return rows.reduce((s, r) => s + (Number(r[id]) || 0), 0); }
+function matches(text, q) {
+  const words = norm(text).split("_");
+  return norm(q).split("_").filter(Boolean).every(x => words.some(w => w.startsWith(x)));
+}
+
+// ===== MÉTADONNÉES GRIST (noms, ordre et types des colonnes) =====
+async function loadMeta() {
+  try {
+    TABLE_ID = await grist.selectedTable.getTableId();
+    const t = await grist.docApi.fetchTable("_grist_Tables");
+    const ref = t.id[t.tableId.indexOf(TABLE_ID)];
+    const c = await grist.docApi.fetchTable("_grist_Tables_column");
+    COLMETA = c.id.map((_, i) => i)
+      .filter(i => c.parentId[i] === ref && !c.colId[i].startsWith("gristHelper_") && c.colId[i] !== "manualSort")
+      .sort((a, b) => c.parentPos[a] - c.parentPos[b])
+      .map(i => ({ id: c.colId[i], label: c.label[i] || c.colId[i], type: guessType(c.type[i], c.widgetOptions[i]) }));
+  } catch (e) { console.warn("Métadonnées indisponibles, détection depuis les données", e); }
+}
+function guessType(t, wo) {
+  if (/^Date/.test(t)) return "date";
+  if (t === "Bool") return "bool";
+  if (t === "Int") return "number";
+  if (t === "Numeric") {
+    try { if (JSON.parse(wo || "{}").numMode === "currency") return "money"; } catch (e) {}
+    return "number";
+  }
+  if (t === "Choice") return "badge";
+  if (t === "Text") { try { if (JSON.parse(wo || "{}").widget === "HyperLink") return "url"; } catch (e) {} }
+  if (t === "Any") return "auto"; // formule non typée : détection d'après les valeurs
+  return "text";
+}
+function typeFromData(k) {
+  const v = ALL.map(r => r[k]).find(x => x !== null && x !== undefined && x !== "");
+  if (v instanceof Date) return "date";
+  if (typeof v === "boolean") return "bool";
+  if (typeof v === "number") return "number";
+  return "text";
+}
+
+// ===== RÉGLAGES =====
+function defaultConfig() {
+  return {
+    title: TABLE_ID ? TABLE_ID.replace(/_/g, " ") : "Tableau",
+    unit: "ligne",
+    totalRow: false,
+    summaryCol: "",
+    lockCol: "",
+    filters: [{ kind: "search", col: "", label: "Recherche" }],
+    columns: META.map((m, i) => ({ id: m.id, label: m.label, type: m.type, show: true, total: false, highlight: false, edit: false, url: "", sub: "" }))
+  };
+}
+function applyConfig() {
+  const def = defaultConfig();
+  const s = saved || {};
+  const byId = Object.fromEntries(def.columns.map(c => [c.id, c]));
+  // Colonnes enregistrées encore présentes, puis colonnes nouvellement rendues visibles dans Grist (affichées)
+  const defined = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== null));
+  const cols = (s.columns || []).filter(c => byId[c.id]).map(c => ({ ...byId[c.id], ...defined(c) }));
+  def.columns.forEach(c => { if (!cols.some(x => x.id === c.id)) cols.push({ ...c }); });
+  cfg = { ...def, ...s, columns: cols, filters: (s.filters || def.filters).filter(f => !f.col || byId[f.col]) };
+  if (s.totalRow === undefined && cols.some(c => c.total)) cfg.totalRow = true; // anciens réglages
+  fstate = {};
+  sort = { col: null, dir: 1 };
+  document.getElementById("title").textContent = cfg.title;
+  buildFilterBar();
+  refresh();
+}
+
+// ===== DONNÉES =====
+grist.onRecords(async records => {
+  await metaReady;
+  ALL = records;
+  // On ne garde que les colonnes que Grist envoie (colonnes visibles de la vue du widget)
+  const keys = records.length
+    ? Object.keys(records[0]).filter(k => k !== "id" && k !== "manualSort" && !k.startsWith("gristHelper_"))
+    : null;
+  const sig = keys ? keys.join("|") : SIG;
+  if (keys && sig !== SIG) {
+    SIG = sig;
+    const pos = id => { const i = COLMETA.findIndex(m => m.id === id); return i < 0 ? 1e6 : i; };
+    META = keys.sort((a, b) => pos(a) - pos(b)).map(k => {
+      const m = COLMETA.find(x => x.id === k);
+      return { id: k, label: m ? m.label : k, type: m && m.type !== "auto" ? m.type : typeFromData(k) };
+    });
+    applyConfig();
+  } else if (!cfg) {
+    if (!META.length) META = COLMETA.map(m => ({ ...m, type: m.type === "auto" ? "text" : m.type }));
+    applyConfig();
+  } else refresh();
+});
+
+grist.onOptions(async opts => {
+  await metaReady;
+  const next = (opts && opts.config) || null;
+  if (cfg && JSON.stringify(next) === JSON.stringify(saved)) return;
+  saved = next;
+  applyConfig();
+});
+
+// Cloisonnement : si la colonne choisie n'a qu'une valeur visible, lecture seule
+function refresh() {
+  if (!cfg) return;
+  const was = locked;
+  const vals = cfg.lockCol ? new Set(ALL.map(r => txt(r[cfg.lockCol])).filter(Boolean)) : null;
+  locked = !!vals && vals.size <= 1;
+  // Roue masquée uniquement en vue cloisonnée (sauf propriétaire/éditeur confirmé)
+  const hideCfg = locked;
+  document.getElementById("cfgBtn").hidden = hideCfg;
+  if (hideCfg) document.getElementById("cfg").hidden = true;
+  if (was !== locked) buildFilterBar();
+  render();
+}
+
+// ===== FILTRES =====
+function apply(rows, skip) {
+  const vis = cfg.columns.filter(c => c.show);
+  return rows.filter(r => cfg.filters.every((f, i) => {
+    const v = fstate[i];
+    if (i === skip || !v) return true;
+    if (f.kind === "select") return txt(r[f.col]) === v;
+    if (f.kind === "bool") return v === "oui" ? r[f.col] === true : r[f.col] !== true;
+    if (f.kind === "search") return matches(f.col ? txt(r[f.col]) : vis.map(c => txt(r[c.id])).join(" "), v);
+    return true;
+  }));
+}
+function buildFilterBar() {
+  const bar = document.getElementById("filters");
+  bar.innerHTML = cfg.filters.map((f, i) => {
+    const lab = esc(f.label || colById(f.col)?.label || "Recherche");
+    const isLock = locked && f.kind === "select" && f.col === cfg.lockCol;
+    if (f.kind === "select")
+      return `<div class="f"><label for="flt${i}">${lab}${isLock ? ' <i class="ri-lock-line lock"></i>' : ""}</label><select id="flt${i}" data-f="${i}" ${isLock ? "disabled" : ""}></select></div>`;
+    if (f.kind === "search")
+      return `<div class="f"><label for="flt${i}">${lab}</label><input id="flt${i}" data-f="${i}" type="text" placeholder="Rechercher…" value="${esc(fstate[i] || "")}"></div>`;
+    if (f.kind === "bool")
+      return `<div class="f" style="flex:0 1 auto;"><label>${lab}</label><div class="segmented">` +
+        [["", "Tous"], ["oui", "Oui"], ["non", "Non"]].map(([v, t]) =>
+          `<button class="seg-btn${(fstate[i] || "") === v ? " active" : ""}" data-f="${i}" data-v="${v}">${t}</button>`).join("") +
+        "</div></div>";
+    return "";
+  }).join("") + (cfg.filters.length ? '<button id="resetBtn" class="reset">Réinitialiser</button>' : "");
+
+  bar.querySelectorAll("select[data-f]").forEach(el => el.onchange = () => { fstate[el.dataset.f] = el.value; render(); });
+  bar.querySelectorAll("input[data-f]").forEach(el => el.oninput = () => { fstate[el.dataset.f] = el.value; render(); });
+  bar.querySelectorAll(".seg-btn").forEach(b => b.onclick = () => {
+    fstate[b.dataset.f] = b.dataset.v;
+    b.parentNode.querySelectorAll(".seg-btn").forEach(x => x.classList.toggle("active", x === b));
+    render();
+  });
+  const rb = document.getElementById("resetBtn");
+  if (rb) rb.onclick = () => { fstate = {}; buildFilterBar(); render(); };
+}
+// Listes croisées : chaque liste dépend des autres filtres
+function fillSelects() {
+  cfg.filters.forEach((f, i) => {
+    if (f.kind !== "select") return;
+    const sel = document.querySelector(`select[data-f="${i}"]`);
+    if (!sel) return;
+    const isLock = locked && f.col === cfg.lockCol;
+    const opts = [...new Set(apply(ALL, i).map(r => txt(r[f.col])).filter(Boolean))].sort((a, b) => a.localeCompare(b, "fr"));
+    const keep = fstate[i] || "";
+    if (keep && !opts.includes(keep)) opts.unshift(keep);
+    sel.innerHTML = (isLock ? "" : '<option value="">Tous</option>') + opts.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+    sel.value = keep;
+    if (isLock && sel.options[0]) sel.value = sel.options[0].value;
+    fstate[i] = sel.value;
+  });
+}
+
+// ===== RENDU =====
+function render() {
+  if (!cfg) return;
+  fillSelects();
+  let rows = apply(ALL);
+  const sc = colById(sort.col);
+  if (sc) rows = [...rows].sort((a, b) => {
+    let va = a[sc.id], vb = b[sc.id];
+    if (sc.type === "date") { va = toDate(va)?.getTime() ?? 0; vb = toDate(vb)?.getTime() ?? 0; }
+    else if (sc.type === "number" || sc.type === "money") { va = Number(va) || 0; vb = Number(vb) || 0; }
+    else if (sc.type === "bool") { va = va === true ? 1 : 0; vb = vb === true ? 1 : 0; }
+    else return txt(va).localeCompare(txt(vb), "fr") * sort.dir;
+    return (va - vb) * sort.dir;
+  });
+
+  const COLS = cfg.columns.filter(c => c.show);
+  const sumCol = colById(cfg.summaryCol);
+  const unit = cfg.unit || "ligne";
+  document.getElementById("summary").textContent = `${rows.length} ${unit}${rows.length > 1 ? "s" : ""}` +
+    (sumCol ? ` — ${sumCol.type === "money" ? fmtMoney(sumOf(rows, sumCol.id)) : fmtNum(sumOf(rows, sumCol.id))}` : "");
+
+  const area = document.getElementById("area");
+  if (!COLS.length) { area.innerHTML = '<p class="empty">Aucune colonne affichée. Ouvrez les réglages (roue dentée).</p>'; return; }
+  if (!rows.length) { area.innerHTML = '<p class="empty">Aucune ligne ne correspond à ces filtres. Modifiez-les ou cliquez sur Réinitialiser.</p>'; return; }
+
+  const align = c => (c.type === "number" || c.type === "money" ? "num" : (c.type === "bool" || c.type === "date" ? "ctr" : "")) + (c.highlight ? " hl" : "");
+
+  let h = '<div class="tbl-scroll"><table class="t"><thead><tr>';
+  COLS.forEach(c => {
+    const ic = sort.col === c.id ? `<i class="ri-arrow-${sort.dir > 0 ? "up" : "down"}-s-line"></i>` : "";
+    h += `<th class="${align(c)}" data-col="${esc(c.id)}">${esc(c.label)}${ic}</th>`;
+  });
+  h += "</tr></thead><tbody>";
+  rows.forEach(r => { h += "<tr>" + COLS.map(c => `<td class="${align(c)}">${cell(c, r)}</td>`).join("") + "</tr>"; });
+  h += "</tbody>";
+  const summed = c => c.total && (c.type === "number" || c.type === "money");
+  if (cfg.totalRow && COLS.some(summed)) {
+    h += "<tfoot><tr>" + COLS.map((c, i) => {
+      if (summed(c)) return `<td class="num${c.highlight ? " hl" : ""}">${c.type === "money" ? fmtMoney(sumOf(rows, c.id)) : fmtNum(sumOf(rows, c.id))}</td>`;
+      return i === 0 ? "<td>TOTAL</td>" : "<td></td>";
+    }).join("") + "</tr></tfoot>";
+  }
+  h += '</table><div class="totop"><a class="fr-link fr-icon-arrow-up-fill fr-link--icon-left" href="#top" id="toTop">Haut de page</a></div></div>';
+  area.innerHTML = h;
+  document.getElementById("toTop").onclick = e => {
+    e.preventDefault();
+    area.querySelector(".tbl-scroll").scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  fitTable();
+
+  area.querySelectorAll(".edit-sw").forEach(el => el.addEventListener("change", () => setBool(+el.dataset.id, el.dataset.col, el.checked, el)));
+  area.querySelectorAll("th[data-col]").forEach(th => th.addEventListener("click", () => {
+    const id = th.dataset.col;
+    sort = sort.col === id ? { col: id, dir: -sort.dir } : { col: id, dir: 1 };
+    render();
+  }));
+}
+
+function cell(c, r) {
+  const v = r[c.id];
+  let h;
+  if (c.url && txt(v) && !locked) {
+    // Modèle d'URL : {value} = valeur de la cellule, {Autre_colonne} = valeur d'une autre colonne
+    const href = c.url.replace(/\{(\w+)\}/g, (_, k) => encodeURIComponent(txt(k === "value" ? v : r[k])));
+    h = `<a class="lnk" href="${esc(href)}" target="_blank" rel="noopener">${clip(txt(v))}</a>`;
+  } else switch (c.type) {
+    // Si la valeur ne correspond pas au format choisi, on l'affiche telle quelle plutôt que vide
+    case "date": { const d = toDate(v); h = d ? fmtDate(d) : esc(txt(v)); break; }
+    case "money": h = v === null || v === undefined || v === "" ? "" : isNaN(Number(v)) ? esc(txt(v)) : fmtMoney(v); break;
+    case "number": h = v === null || v === undefined || v === "" ? "" : isNaN(Number(v)) ? esc(txt(v)) : fmtNum(v); break;
+    case "bool":
+      h = c.edit && editable()
+        ? `<label class="sw" title="Modifier"><input type="checkbox" class="edit-sw" data-id="${r.id}" data-col="${esc(c.id)}" ${v === true ? "checked" : ""}><span></span></label>`
+        : (v === true ? '<span class="badge b-ok">Oui</span>' : '<span class="badge b-no">Non</span>');
+      break;
+    case "url": h = linkCell(txt(v)); break;
+    case "badge": h = txt(v) ? `<span class="badge b-state ${bc(c, txt(v))}">${esc(txt(v))}</span>` : ""; break;
+    default: h = clip(txt(v));
+  }
+  if (c.sub) { const s = txt(r[c.sub]); if (s) h += `<span class="badge b-sub ${bc(colById(c.sub), s)}">${esc(s)}</span>`; }
+  return h;
+}
+
+// ===== ÉDITION D'UNE CASE OUI/NON =====
+async function setBool(id, col, val, input) {
+  input.disabled = true;
+  try {
+    await grist.selectedTable.update({ id, fields: { [col]: val } });
+    toast("Modification enregistrée", false);
+  } catch (e) {
+    input.checked = !val;
+    toast("Modification refusée : vous n'avez pas les droits d'édition sur ce document.", true);
+    console.warn(e);
+  } finally {
+    input.disabled = false;
+  }
+}
+let toastTimer;
+function toast(msg, isErr) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = isErr ? "toast err-t" : "toast";
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 3000);
+}
+
+// ===== PANNEAU DE RÉGLAGES =====
+let draft = null;
+// Première valeur non vide de la colonne, rendue avec le format choisi (aide au réglage)
+function sample(c) {
+  const r = ALL.find(x => x[c.id] !== null && x[c.id] !== undefined && x[c.id] !== "");
+  return r ? cell({ ...c, url: "", edit: false, sub: "" }, r) : '<span style="color:#999">vide</span>';
+}
+let hiddenOpen = false;
+let colorOpen = null; // { row: colonne sous laquelle le panneau s'ouvre, target: colonne dont on règle les couleurs }
+// Couleurs proposées pour les colonnes au format Pastille ou utilisées en pastille sous une valeur
+// Une ligne propose les couleurs de sa propre pastille (format Pastille) et/ou de sa « pastille sous la valeur »
+function palBtn(row, target, title) {
+  const on = colorOpen && colorOpen.row === row && colorOpen.target === target;
+  return `<button class="mini" data-pal-row="${esc(row)}" data-pal="${esc(target)}" title="${title}" style="${on ? "background:#E3E3FD !important" : ""}"><i class="ri-palette-line"></i></button>`;
+}
+function colorRowFor(id) {
+  const i = draft.columns.findIndex(x => x.id === id);
+  return i < 0 ? "" : colorRow(draft.columns[i], i);
+}
+function colorRow(c, i) {
+  const sel = (k, attrs) => `<select ${attrs}>${Object.entries(COLORS).map(([v, t]) => `<option value="${v}"${v === (k || "") ? " selected" : ""}>${t}</option>`).join("")}</select>`;
+  const vals = [...new Set(ALL.map(r => txt(r[c.id])).filter(Boolean))].sort((a, b) => a.localeCompare(b, "fr"));
+  Object.keys(c.colors || {}).forEach(v => { if (!vals.includes(v)) vals.push(v); });
+  const shown = vals.slice(0, 40);
+  return `<tr class="colors-row"><td></td><td colspan="11"><div class="col-map">
+    <span style="font-size:.75rem;color:#000091;font-weight:700">Couleurs de « ${esc(c.label)} » :</span>
+    <label>Par défaut ${sel(c.color, `data-cdef="${i}"`)}</label>
+    ${shown.map(v => `<label><span class="badge ${c.type === "badge" ? "b-state" : "b-sub"} ${bc(c, v)}" style="display:inline-block;margin:0">${esc(v)}</span>${sel((c.colors || {})[v], `data-cval="${i}" data-v="${esc(v)}"`)}</label>`).join("")}
+    ${vals.length > 40 ? `<small>(${vals.length - 40} autres valeurs : couleur par défaut)</small>` : ""}
+  </div></td></tr>`;
+}
+let dragFrom = null;
+function openCfg() {
+  const box = document.getElementById("cfg");
+  if (!box.hidden) { box.hidden = true; return; }
+  draft = JSON.parse(JSON.stringify(cfg));
+  drawCfg();
+  box.hidden = false;
+}
+function drawCfg() {
+  const box = document.getElementById("cfg");
+  const colById2 = id => { const c = draft.columns.find(x => x.id === id); return c ? c.label : ""; };
+  const colOpts = (sel, empty) => `<option value="">${empty}</option>` +
+    draft.columns.map(c => `<option value="${esc(c.id)}"${c.id === sel ? " selected" : ""}>${esc(c.label)}</option>`).join("");
+  const opts = (dict, sel) => Object.entries(dict).map(([k, t]) => `<option value="${k}"${k === sel ? " selected" : ""}>${t}</option>`).join("");
+  const mv = (scope, i, n) =>
+    `<div class="mv"><button class="mini" data-mv="${scope}" data-i="${i}" data-d="-1" ${i === 0 ? "disabled" : ""} title="Monter"><i class="ri-arrow-up-s-line"></i></button>` +
+    `<button class="mini" data-mv="${scope}" data-i="${i}" data-d="1" ${i === n - 1 ? "disabled" : ""} title="Descendre"><i class="ri-arrow-down-s-line"></i></button></div>`;
+  const indexed = draft.columns.map((c, i) => [c, i]);
+  const shown = indexed.filter(([c]) => c.show);
+  const hiddenCols = indexed.filter(([c]) => !c.show);
+
+  box.innerHTML = `
+    <h2>Réglages du widget</h2>
+    <p style="margin:0;font-size:.75rem;color:#3A3A3A">Version ${VERSION} — colonne de cloisonnement : <strong>${esc(draft.lockCol || "aucune")}</strong></p>
+    <h3>Général</h3>
+    <div class="cfg-grid">
+      <label class="cfg-row">Titre<input data-k="title" value="${esc(draft.title)}"></label>
+      <label class="cfg-row">Nom d'une ligne (singulier)<input data-k="unit" value="${esc(draft.unit)}"><small>Ex. : dossier → « 12 dossiers »</small></label>
+      <label class="cfg-row" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" data-k="totalRow" ${draft.totalRow ? "checked" : ""}>Ligne TOTAL en bas du tableau<small>(somme des colonnes Nombre / Montant cochées « Total »)</small></label>
+      <label class="cfg-row">Somme affichée sous le titre<select data-k="summaryCol">${colOpts(draft.summaryCol, "Aucune")}</select></label>
+      <label class="cfg-row">Colonne de cloisonnement<select data-k="lockCol">${colOpts(draft.lockCol, "Aucune")}</select><small>Si une seule valeur est visible (vue partagée filtrée), le widget passe en lecture seule.</small></label>
+    </div>
+
+    <h3>Filtres</h3>
+    <div class="cfg-tbl"><table>
+      <thead><tr><th>Ordre</th><th>Type</th><th>Colonne</th><th>Libellé</th><th></th></tr></thead>
+      <tbody>${draft.filters.map((f, i) => `<tr>
+        <td>${mv("f", i, draft.filters.length)}</td>
+        <td><select data-fi="${i}" data-fk="kind">${opts(KINDS, f.kind)}</select></td>
+        <td><select data-fi="${i}" data-fk="col" title="${esc(colById2(f.col))}">${colOpts(f.col, f.kind === "search" ? "Toutes les colonnes affichées" : "— choisir —")}</select></td>
+        <td><input data-fi="${i}" data-fk="label" value="${esc(f.label || "")}" placeholder="Nom de la colonne"></td>
+        <td><button class="mini" data-rm="${i}" title="Supprimer"><i class="ri-delete-bin-line"></i></button></td>
+      </tr>`).join("") || '<tr><td colspan="5">Aucun filtre</td></tr>'}</tbody>
+    </table></div>
+    <button class="btn-s" id="addF">+ Ajouter un filtre</button>
+
+    <h3>Colonnes affichées (${shown.length}/${draft.columns.length}) <small style="font-weight:400;color:#666">— glisser-déposer avec <i class="ri-draggable"></i> pour réordonner</small></h3>
+    <div style="display:flex;gap:4px;margin-bottom:6px">
+      <button class="reset" id="showAll">Tout afficher</button>
+      <button class="reset" id="hideAll">Tout masquer</button>
+    </div>
+    <div class="cfg-tbl"><table>
+      <thead><tr><th></th><th>Afficher</th><th>Libellé</th><th>Format</th><th>Total</th><th>Surligner</th><th>Modifiable<br>(Oui/Non)</th><th>Lien (modèle d'URL)</th><th>Pastille sous la valeur</th><th>Couleurs</th><th>Colonne Grist</th><th>Exemple</th></tr></thead>
+      <tbody>${shown.map(([c, i]) => `<tr data-row="${i}">
+        <td class="drag" title="Glisser pour déplacer"><i class="ri-draggable"></i></td>
+        <td class="c"><input type="checkbox" data-ci="${i}" data-ck="show" checked></td>
+        <td><input data-ci="${i}" data-ck="label" value="${esc(c.label)}" title="${esc(c.label)} (${esc(c.id)})"></td>
+        <td><select data-ci="${i}" data-ck="type">${opts(TYPES, c.type)}</select></td>
+        <td class="c"><input type="checkbox" data-ci="${i}" data-ck="total" ${c.total ? "checked" : ""}></td>
+        <td class="c"><input type="checkbox" data-ci="${i}" data-ck="highlight" ${c.highlight ? "checked" : ""}></td>
+        <td class="c"><input type="checkbox" data-ci="${i}" data-ck="edit" ${c.edit ? "checked" : ""}></td>
+        <td><input data-ci="${i}" data-ck="url" value="${esc(c.url)}" placeholder="https://…/{value}" style="width:160px"></td>
+        <td><select data-ci="${i}" data-ck="sub" title="${esc(colById2(c.sub))}">${colOpts(c.sub, "—")}</select></td>
+        <td class="c" style="white-space:nowrap">${c.type === "badge" ? palBtn(c.id, c.id, "Couleurs de cette colonne") : ""}${c.sub ? palBtn(c.id, c.sub, "Couleurs de la pastille sous la valeur") : ""}</td>
+        <td><code>${esc(c.id)}</code></td>
+        <td>${sample(c)}</td>
+      </tr>${colorOpen && colorOpen.row === c.id ? colorRowFor(colorOpen.target) : ""}`).join("") || '<tr><td colspan="12">Aucune colonne affichée</td></tr>'}</tbody>
+    </table></div>
+
+    ${hiddenCols.length ? `<details id="hidCols" ${hiddenOpen ? "open" : ""}>
+      <summary>Colonnes non affichées (${hiddenCols.length}) — cocher pour ajouter</summary>
+      <div class="cfg-tbl"><table><tbody>${hiddenCols.map(([c, i]) => `<tr>
+        <td class="c" style="width:40px"><input type="checkbox" data-ci="${i}" data-ck="show"></td>
+        <td>${esc(c.label)}</td><td><code>${esc(c.id)}</code></td><td>${sample(c)}</td>
+      </tr>`).join("")}</tbody></table></div>
+    </details>` : ""}
+
+    <div class="cfg-actions">
+      <button class="btn-p" id="cfgSave">Enregistrer</button>
+      <button class="btn-s" id="cfgCancel">Annuler</button>
+      <button class="btn-s" id="cfgReset">Rétablir les réglages par défaut</button>
+    </div>`;
+
+  const bind = (el, fn) => { el[el.tagName === "INPUT" && el.type !== "checkbox" ? "oninput" : "onchange"] = () => {
+    fn(el.type === "checkbox" ? el.checked : el.value);
+    // Infobulle à jour avec le texte complet
+    if (el.tagName === "SELECT") el.title = el.selectedOptions[0] ? el.selectedOptions[0].text : "";
+    else if (el.type === "text" || !el.type || el.dataset.ck === "label") el.title = el.value;
+  }; };
+  box.querySelectorAll("[data-k]").forEach(el => bind(el, v => {
+    draft[el.dataset.k] = v;
+    // Activation de la ligne TOTAL : si aucune colonne cochée, on coche toutes les colonnes Nombre / Montant affichées
+    if (el.dataset.k === "totalRow") {
+      const num = c => c.show && (c.type === "number" || c.type === "money");
+      if (v && !draft.columns.some(c => num(c) && c.total)) draft.columns.forEach(c => { if (num(c)) c.total = true; });
+      drawCfg();
+    }
+  }));
+  box.querySelectorAll("[data-fi]").forEach(el => bind(el, v => { draft.filters[el.dataset.fi][el.dataset.fk] = v; if (el.dataset.fk === "kind") drawCfg(); }));
+  box.querySelectorAll("[data-ci]").forEach(el => bind(el, v => {
+    const i = +el.dataset.ci;
+    draft.columns[i][el.dataset.ck] = v;
+    if (el.dataset.ck === "show") {
+      if (v) { // colonne ajoutée : placée à la fin des colonnes affichées
+        const [c] = draft.columns.splice(i, 1);
+        draft.columns.splice(draft.columns.map(x => x.show).lastIndexOf(true) + 1, 0, c);
+      }
+      drawCfg();
+    }
+    if (el.dataset.ck === "type" || el.dataset.ck === "sub") drawCfg();
+  }));
+  box.querySelectorAll("[data-pal]").forEach(el => el.onclick = () => {
+    const same = colorOpen && colorOpen.row === el.dataset.palRow && colorOpen.target === el.dataset.pal;
+    colorOpen = same ? null : { row: el.dataset.palRow, target: el.dataset.pal };
+    drawCfg();
+  });
+  box.querySelectorAll("[data-cdef]").forEach(el => el.onchange = () => { draft.columns[+el.dataset.cdef].color = el.value; drawCfg(); });
+  box.querySelectorAll("[data-cval]").forEach(el => el.onchange = () => {
+    const c = draft.columns[+el.dataset.cval];
+    c.colors = { ...(c.colors || {}) };
+    if (el.value) c.colors[el.dataset.v] = el.value; else delete c.colors[el.dataset.v];
+    drawCfg();
+  });
+  document.getElementById("showAll").onclick = () => { draft.columns.forEach(c => { c.show = true; }); drawCfg(); };
+  document.getElementById("hideAll").onclick = () => { draft.columns.forEach(c => { c.show = false; }); hiddenOpen = true; drawCfg(); };
+  const hid = document.getElementById("hidCols");
+  if (hid) hid.ontoggle = () => { hiddenOpen = hid.open; };
+
+  // Glisser-déposer des colonnes affichées (via la poignée)
+  const clearMarks = () => box.querySelectorAll(".drop-before, .drop-after").forEach(x => x.classList.remove("drop-before", "drop-after"));
+  box.querySelectorAll("tr[data-row]").forEach(tr => {
+    const handle = tr.querySelector(".drag");
+    handle.onmousedown = () => { tr.draggable = true; };
+    handle.onmouseup = () => { tr.draggable = false; };
+    tr.ondragstart = e => {
+      dragFrom = +tr.dataset.row;
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", tr.dataset.row);
+      tr.classList.add("dragging");
+    };
+    tr.ondragend = () => { tr.draggable = false; tr.classList.remove("dragging"); clearMarks(); dragFrom = null; };
+    tr.ondragover = e => {
+      if (dragFrom === null) return;
+      e.preventDefault();
+      const r = tr.getBoundingClientRect();
+      clearMarks();
+      tr.classList.add(e.clientY > r.top + r.height / 2 ? "drop-after" : "drop-before");
+    };
+    tr.ondrop = e => {
+      e.preventDefault();
+      if (dragFrom === null) return;
+      const to = +tr.dataset.row, after = tr.classList.contains("drop-after");
+      if (to !== dragFrom) {
+        const [c] = draft.columns.splice(dragFrom, 1);
+        const t = to > dragFrom ? to - 1 : to;
+        draft.columns.splice(after ? t + 1 : t, 0, c);
+      }
+      dragFrom = null;
+      drawCfg();
+    };
+  });
+
+  box.querySelectorAll("[data-mv]").forEach(el => el.onclick = () => {
+    const list = el.dataset.mv === "c" ? draft.columns : draft.filters;
+    const i = +el.dataset.i, j = i + +el.dataset.d;
+    [list[i], list[j]] = [list[j], list[i]];
+    drawCfg();
+  });
+  box.querySelectorAll("[data-rm]").forEach(el => el.onclick = () => { draft.filters.splice(+el.dataset.rm, 1); drawCfg(); });
+  document.getElementById("addF").onclick = () => { draft.filters.push({ kind: "select", col: "", label: "" }); drawCfg(); };
+  document.getElementById("cfgSave").onclick = () => saveCfg(draft);
+  document.getElementById("cfgCancel").onclick = () => { box.hidden = true; };
+  document.getElementById("cfgReset").onclick = () => saveCfg(null);
+}
+async function saveCfg(next) {
+  if (next) next.filters = next.filters.filter(f => f.col || f.kind === "search");
+  saved = next ? JSON.parse(JSON.stringify(next)) : null;
+  try { await grist.setOption("config", saved); }
+  catch (e) { toast("Enregistrement impossible : droits insuffisants ?", true); console.warn(e); }
+  document.getElementById("cfg").hidden = true;
+  applyConfig();
+}
+
+document.getElementById("cfgBtn").addEventListener("click", openCfg);
+// Recalcule la hauteur quand le panneau de réglages ou la barre de filtres change de taille
+if (window.ResizeObserver) {
+  const ro = new ResizeObserver(() => fitTable());
+  ["cfg", "filters"].forEach(id => ro.observe(document.getElementById(id)));
+}
+</script>
+</body>
+</html>
